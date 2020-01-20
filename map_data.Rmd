@@ -1,0 +1,43 @@
+---
+title: "Map Tuition Data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE}
+library(tidyverse)
+library(sf)
+library(leaflet)
+```
+
+```{r}
+tuition_fn <- "data/tuition.shp"
+```
+
+```{r}
+tuition <- tuition_fn %>% read_sf()
+```
+
+```{r}
+total_num_colours <- 
+  tuition %>% 
+  st_drop_geometry() %>%
+  distinct(curriculum) %>% 
+  nrow()
+```
+
+
+```{r}
+leaflet() %>% 
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  addCircles(
+    color = ~ colorFactor(scales::hue_pal()(total_num_colours), domain = tuition$curriculum)(curriculum),
+    weight = 3,
+    label = ~ str_c(name, " (", curriculum, ")"),
+    data = tuition
+  )
+```
+

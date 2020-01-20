@@ -1,0 +1,185 @@
+---
+title: "Parse Tuition Data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE}
+library(tidyverse)
+library(reticulate)
+library(sf)
+use_python("/Users/antarikshmahajan/opt/anaconda3/bin/python")
+use_condaenv("anaconda3")
+```
+
+```{python}
+import pandas as pd
+import os
+from docx import *
+import json
+import urllib
+import ssl
+```
+
+```{python}
+data_path = "data/"
+data_fns = [data_path + fn for fn in os.listdir(data_path) if "private" in fn]
+parsed_fn = data_path + "tuition_parsed.csv"
+coordinates_fn = data_path + "tuition_latlong.csv"
+final_fn = data_path + "tuition.shp"
+```
+
+```{python}
+dfs = []
+for data_fn in data_fns:
+  doc = Document(data_fn)
+  all_text = ""
+  for p in doc.paragraphs:
+    all_text += p.text
+    if "Main Curriculum" in p.text:
+      all_text += "\n"
+  by_centre = all_text.split("\n")
+  df = pd.DataFrame(data = {"data": pd.Series(by_centre)})
+  dfs.append(df)
+combined = pd.concat(dfs)
+combined.to_csv(parsed_fn)
+```
+
+```{r}
+tuition_parsed <- 
+  py$parsed_fn %>% 
+  read_csv() %>% 
+  filter(data != "") %>% 
+  select(data)
+```
+
+```{r}
+tuition_parsed %>% pluck(1, 1)
+```
+
+
+```{r}
+tuition_parsed <- 
+  tuition_parsed %>% 
+  extract(
+    data, 
+    into = c("name", "address", "tel", "fax", "email", "supervisor", "curriculum"),
+    regex = "(.*)Address: (.*) Tel: (.*)\\t\\tFax: (.*)\\tEmail: (.*)Supervisor: (.*)\t\tMain Curriculum: (.*)",
+    remove = TRUE,
+    convert = TRUE
+    )
+```
+
+```{r}
+tuition_parsed %>% filter(tel == "")
+```
+
+
+```{r}
+tuition_parsed %>% filter(fax == "") %>% nrow()
+```
+
+```{r}
+tuition_parsed %>% filter(email == "") %>% nrow()
+```
+
+```{r}
+tuition_parsed %>% filter(supervisor == "")
+```
+
+
+```{r}
+tuition_parsed <-
+  tuition_parsed %>% 
+  extract(
+    tel,
+    into = c("tel", "tel_alt"),
+    regex = "([[:digit:]]+)/?([[:digit:]]*)",
+    remove = TRUE,
+    convert = TRUE
+  ) %>% 
+  extract(
+    fax,
+    into = c("fax", "fax_alt"),
+    regex = "([[:digit:]]+)/?([[:digit:]]*)",
+    remove = TRUE,
+    convert = TRUE
+  ) %>% 
+  mutate_if(
+    is.character,
+    str_replace,
+    pattern = "$^",
+    replacement = NA_character_
+  )
+```
+
+```{r}
+tuition_parsed %>% filter(is.na(tel))
+```
+
+```{r}
+tuition_parsed %>% filter(is.na(fax)) %>% nrow()
+```
+
+```{r}
+tuition_parsed %>% filter(is.na(supervisor))
+```
+
+```{r}
+tuition_parsed %>% filter(is.na(address))
+```
+
+
+```{python}
+def get_onemap_url(address):
+  result = "https://developers.onemap.sg/commonapi/search?searchVal="
+  result += address.replace(" ", "+").replace("#", "%23")
+  result += "&getAddrDetails=N&returnGeom=Y&pageNum=1"
+  return result
+```
+
+
+```{python}
+lats = []
+lngs = []
+postal_codes = r.tuition_parsed.address.str.extract("(Singapore \\d+)$")
+for _, pc in postal_codes[0].iteritems():
+  try:
+    api_result = json.loads(
+    urllib.request.urlopen(get_onemap_url(pc), context = ssl.SSLContext())
+      .read()
+      .decode('utf-8')
+    )
+    lat = float(api_result['results'][0]['LATITUDE'])
+    lng = float(api_result['results'][0]['LONGITUDE'])
+    lats.append(lat)
+    lngs.append(lng)
+  except:
+    lats.append(-1)
+    lngs.append(-1)
+r.tuition_parsed = r.tuition_parsed.assign(lat = lats)
+r.tuition_parsed = r.tuition_parsed.assign(lng = lngs)
+```
+
+```{r}
+tuition_parsed %>% filter(lat == -1 | lng == -1)
+```
+
+```{r}
+tuition_parsed %>% 
+  write_csv(py$coordinates_fn)
+```
+
+```{r}
+tuition_parsed %>% 
+  filter(lat != -1, lng != -1) %>% 
+  st_as_sf(
+    crs = 3857,
+    coords = c("lng", "lat")
+  ) %>% 
+  st_write(py$final_fn)
+```
+
