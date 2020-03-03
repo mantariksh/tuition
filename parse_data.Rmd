@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(reticulate)
 library(sf)
-use_python("/Users/antarikshmahajan/opt/anaconda3/bin/python")
+use_python("/Users/antarikshmahajan/anaconda3/bin/python")
 use_condaenv("anaconda3")
 ```
 
@@ -181,5 +181,59 @@ tuition_parsed %>%
     coords = c("lng", "lat")
   ) %>% 
   st_write(py$final_fn)
+```
+
+```{r}
+schools_fn <- "data/general-information-of-schools.csv"
+schools <- schools_fn %>% read_csv()
+```
+
+```{r}
+schools %>% glimpse()
+```
+
+```{r}
+schools <- 
+  schools %>% 
+  mutate_at(vars(ends_with("_code"), ends_with("_ind")), factor)
+```
+
+```{python}
+lats = []
+lngs = []
+for i, row in r.schools.iterrows():
+  try:
+    api_result = json.loads(
+    urllib.request.urlopen(get_onemap_url(row.postal_code), context = ssl.SSLContext())
+      .read()
+      .decode('utf-8')
+    )
+    lat = float(api_result['results'][0]['LATITUDE'])
+    lng = float(api_result['results'][0]['LONGITUDE'])
+    lats.append(lat)
+    lngs.append(lng)
+  except:
+    lats.append(-1)
+    lngs.append(-1)
+r.schools = r.schools.assign(lat = lats)
+r.schools = r.schools.assign(lng = lngs)
+```
+
+```{r}
+schools %>% filter(lat == -1 | lng == -1)
+```
+
+```{r}
+schools %>% write_csv("data/schools_latlong.csv")
+```
+
+```{r}
+schools %>% 
+  filter(lat != -1, lng != -1) %>% 
+  st_as_sf(
+    crs = 3857,
+    coords = c("lng", "lat")
+  ) %>% 
+  st_write("data/schools.shp")
 ```
 

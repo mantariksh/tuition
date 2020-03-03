@@ -15,11 +15,26 @@ library(leaflet)
 
 ```{r}
 tuition_fn <- "data/tuition.shp"
+schools_fn <- "data/schools.shp"
 ```
 
 ```{r}
 tuition <- tuition_fn %>% read_sf()
+schools <- schools_fn %>% read_sf()
 ```
+
+```{r}
+combined <- 
+  schools %>% 
+  transmute(name = schl_nm, geometry) %>% 
+  mutate(type = "school") %>% 
+  rbind(
+    tuition %>% 
+      select(name, geometry) %>% 
+      mutate(type = "tuition")
+  )
+```
+
 
 ```{r}
 total_num_colours <- 
@@ -34,10 +49,22 @@ total_num_colours <-
 leaflet() %>% 
   addProviderTiles(providers$CartoDB.Positron) %>% 
   addCircles(
-    color = ~ colorFactor(scales::hue_pal()(total_num_colours), domain = tuition$curriculum)(curriculum),
+    color = ~ colorFactor(scales::hue_pal()(2), domain = combined$type)(type),
     weight = 3,
-    label = ~ str_c(name, " (", curriculum, ")"),
-    data = tuition
+    label = ~ name,
+    data = combined
   )
+```
+
+
+```{r}
+# leaflet() %>% 
+#   addProviderTiles(providers$CartoDB.Positron) %>% 
+#   addCircles(
+#     color = ~ colorFactor(scales::hue_pal()(total_num_colours), domain = tuition$curriculum)(curriculum),
+#     weight = 3,
+#     label = ~ str_c(name, " (", curriculum, ")"),
+#     data = tuition
+#   )
 ```
 
